@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+/* 앱 색상 팔레트 (데스크탑 버전 다크 테마와 결) */
+@theme {
+  --color-bg: #1b1b1f;
+  --color-card: #2a2a31;
+  --color-card-hover: #34343d;
+  --color-accent: #4a9eff;
+  --color-good: #2e9e5b;
+  --color-bad: #e05260;
+  --color-gold: #e0b341;
+  --color-muted: #9aa0a6;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: #e8e8ea;
+  font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+    "Pretendard", "Malgun Gothic", system-ui, sans-serif;
+  /* 아이폰 노치·홈바 안전영역 */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+           env(safe-area-inset-bottom) env(safe-area-inset-left);
+  /* 당겨서 새로고침/바운스 억제 → 앱 느낌 */
+  overscroll-behavior-y: contain;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 한자는 시스템 CJK 폰트가 가장 선명. iOS=PingFang/Apple SD Gothic */
+.hanja {
+  font-family: "Apple SD Gothic Neo", "PingFang SC", "Noto Sans CJK KR",
+    "Malgun Gothic", serif;
+}
