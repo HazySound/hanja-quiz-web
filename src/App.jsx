@@ -8,7 +8,7 @@ export default function App() {
   return (
     // 모바일 퍼스트: 폰에선 꽉 차고, 큰 화면(패드/가로)에선 가운데 정렬 + 최대폭으로 '앱'처럼.
     <div className="min-h-full w-full flex justify-center">
-      <div className="w-full max-w-screen-sm px-4 py-5 flex flex-col">
+      <div className="w-full max-w-[640px] px-4 py-5 flex flex-col">
         <AnimatePresence mode="wait">
           <Routes location={location} key={location.pathname}>
             <Route path="/" element={<Menu />} />
