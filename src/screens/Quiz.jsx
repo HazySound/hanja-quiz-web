@@ -152,70 +152,89 @@ export default function Quiz() {
     )
   }
 
-  // ----- 풀이 -----
+  // ----- 풀이 (상단 고정 / 가운데 스크롤 / 하단 버튼 고정 3단) -----
   return (
-    <Shell onBack={() => nav('/')} title="랜덤 풀이">
-      {/* 진행 바 */}
-      <div className="mb-1 flex items-center justify-between text-sm text-muted">
-        <span>
+    <motion.div
+      initial={{ opacity: 0, x: 16 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -16 }}
+      transition={{ duration: 0.18 }}
+      className="flex min-h-0 flex-1 flex-col"
+    >
+      {/* 상단 고정: 뒤로 + 진행 */}
+      <div className="shrink-0">
+        <div className="mb-3 flex items-center justify-between">
+          <button
+            onClick={() => nav('/')}
+            className="rounded-xl bg-card px-3.5 py-2 text-sm hover:bg-card-hover"
+          >
+            ◀ 뒤로
+          </button>
+          <span className="text-sm text-muted">정답 {results.filter((r) => r.correct).length}</span>
+        </div>
+        <div className="mb-1 text-sm text-muted">
           {qi + 1} / {questions.length}
-        </span>
-        <span>정답 {results.filter((r) => r.correct).length}</span>
-      </div>
-      <div className="mb-6 h-1.5 overflow-hidden rounded-full bg-card">
-        <div
-          className="h-full rounded-full bg-accent transition-all duration-300"
-          style={{ width: `${(qi / questions.length) * 100}%` }}
-        />
+        </div>
+        <div className="h-1.5 overflow-hidden rounded-full bg-card">
+          <div
+            className="h-full rounded-full bg-accent transition-all duration-300"
+            style={{ width: `${(qi / questions.length) * 100}%` }}
+          />
+        </div>
       </div>
 
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={qi}
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -20 }}
-          transition={{ duration: 0.2 }}
-        >
-          {/* 문제 */}
-          <div className="mb-6 rounded-2xl bg-card py-9 text-center">
-            <div className={q.dir === H2R ? 'brand-hanja text-7xl leading-none' : 'text-3xl font-bold'}>
-              {q.prompt}
+      {/* 가운데: 문제 + 보기. 넘치면 이 영역만 스크롤. */}
+      <div className="flex min-h-0 flex-1 flex-col justify-center gap-4 overflow-y-auto py-4">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={qi}
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            transition={{ duration: 0.2 }}
+            className="flex flex-col gap-4"
+          >
+            {/* 문제 */}
+            <div className="rounded-2xl bg-card py-7 text-center">
+              <div className={q.dir === H2R ? 'brand-hanja text-7xl leading-none' : 'text-3xl font-bold'}>
+                {q.prompt}
+              </div>
+              <div className="text-muted mt-3 text-sm">{q.sub}</div>
             </div>
-            <div className="text-muted mt-4 text-sm">{q.sub}</div>
-          </div>
 
-          {/* 보기 */}
-          <div className="flex flex-col gap-2.5">
-            {q.options.map((opt, i) => (
-              <motion.button
-                key={i}
-                whileTap={answered === null ? { scale: 0.98 } : undefined}
-                onClick={() => select(i)}
-                className={optionClass(i, answered, q.answerIndex)}
-              >
-                <span className="flex items-center justify-between gap-3">
-                  <span className={isHanjaOption ? 'hanja text-2xl' : 'text-base'}>{opt}</span>
-                  {answered !== null && <span className="text-muted text-sm">{q.notes[i]}</span>}
-                </span>
-              </motion.button>
-            ))}
-          </div>
+            {/* 보기 */}
+            <div className="flex flex-col gap-2.5">
+              {q.options.map((opt, i) => (
+                <motion.button
+                  key={i}
+                  whileTap={answered === null ? { scale: 0.98 } : undefined}
+                  onClick={() => select(i)}
+                  className={optionClass(i, answered, q.answerIndex)}
+                >
+                  <span className="flex items-center justify-between gap-3">
+                    <span className={isHanjaOption ? 'hanja text-2xl' : 'text-base'}>{opt}</span>
+                    {answered !== null && <span className="text-muted text-sm">{q.notes[i]}</span>}
+                  </span>
+                </motion.button>
+              ))}
+            </div>
+          </motion.div>
+        </AnimatePresence>
+      </div>
 
-          {answered !== null && (
-            <motion.button
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={next}
-              className="mt-5 w-full rounded-2xl bg-accent py-3.5 font-bold text-white hover:opacity-90"
-            >
-              {qi + 1 < questions.length ? '다음' : '결과 보기'}
-            </motion.button>
-          )}
-        </motion.div>
-      </AnimatePresence>
-    </Shell>
+      {/* 하단 고정: 다음 버튼(자리 항상 예약 — 답 전엔 비활성, 위치 안 변함). */}
+      <div className="shrink-0 pt-3">
+        <button
+          onClick={next}
+          disabled={answered === null}
+          className="w-full rounded-2xl py-3.5 font-bold transition-colors
+                     bg-accent text-white hover:opacity-90
+                     disabled:cursor-default disabled:bg-card disabled:text-muted disabled:hover:opacity-100"
+        >
+          {answered === null ? '정답을 고르세요' : qi + 1 < questions.length ? '다음' : '결과 보기'}
+        </button>
+      </div>
+    </motion.div>
   )
 }
 

@@ -49,10 +49,13 @@ body {
   justify-content: center;
 }
 
-/* 콘텐츠 폭·여백 + 아이폰 안전영역(노치/홈바)을 여기서 처리. */
+/* 콘텐츠 폭·여백 + 아이폰 안전영역(노치/홈바)을 여기서 처리.
+   min-height:100%로 화면을 꽉 채워, 자식이 flex-1로 '남는 높이'를 차지할 수 있게 한다
+   (퀴즈처럼 하단 버튼을 화면 바닥에 고정하는 3단 레이아웃의 토대). */
 .app-content {
   width: 100%;
   max-width: 640px;
+  min-height: 100%;
   display: flex;
   flex-direction: column;
   padding: calc(env(safe-area-inset-top) + 1.25rem)
