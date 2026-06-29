@@ -40,7 +40,10 @@ body {
    사파리 툴바가 보이든 숨든 '실제 보이는 영역'에 정확히 맞춘다.
    내용이 넘칠 때(부수 picker·목록 등)만 이 안에서 스크롤. */
 .app-shell {
-  height: 100dvh;
+  height: 100dvh; /* 폴백 */
+  /* 키보드가 뜨면 그 위의 '실제 보이는 높이'에 맞춤(App.jsx가 VisualViewport로 --app-height 갱신).
+     → 키보드만큼 앱이 줄어 입력칸·버튼이 키보드 위에 보이고, 닫히면 자동 복귀. */
+  height: var(--app-height, 100dvh);
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior-y: contain;
