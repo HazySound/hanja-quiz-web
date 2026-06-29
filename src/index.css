@@ -19,18 +19,46 @@ html, body, #root {
   height: 100%;
 }
 
+/* 문서(html/body)는 스크롤·바운스를 하지 않는다. 실제 스크롤은 .app-shell에서만.
+   → 내용이 화면에 다 들어오면 스크롤이 아예 안 생겨, 탭할 때 위아래로 튀지 않음.
+   iOS 사파리의 동적 툴바로 인한 '약간 넘침 → 고무줄 바운스' 문제를 근본 차단. */
+html, body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 body {
   margin: 0;
   background: var(--color-bg);
   color: #e8e8ea;
   font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
     "Pretendard", "Malgun Gothic", system-ui, sans-serif;
-  /* 아이폰 노치·홈바 안전영역 */
-  padding: env(safe-area-inset-top) env(safe-area-inset-right)
-           env(safe-area-inset-bottom) env(safe-area-inset-left);
-  /* 당겨서 새로고침/바운스 억제 → 앱 느낌 */
-  overscroll-behavior-y: contain;
   -webkit-tap-highlight-color: transparent;
+}
+
+/* 앱 셸 = 유일한 스크롤 컨테이너. 높이를 100dvh(동적 뷰포트)로 잡아
+   사파리 툴바가 보이든 숨든 '실제 보이는 영역'에 정확히 맞춘다.
+   내용이 넘칠 때(부수 picker·목록 등)만 이 안에서 스크롤. */
+.app-shell {
+  height: 100dvh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  justify-content: center;
+}
+
+/* 콘텐츠 폭·여백 + 아이폰 안전영역(노치/홈바)을 여기서 처리. */
+.app-content {
+  width: 100%;
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  padding: calc(env(safe-area-inset-top) + 1.25rem)
+           calc(env(safe-area-inset-right) + 1rem)
+           calc(env(safe-area-inset-bottom) + 1.25rem)
+           calc(env(safe-area-inset-left) + 1rem);
 }
 
 /* 한자는 시스템 CJK 폰트가 가장 선명. iOS=PingFang/Apple SD Gothic */
