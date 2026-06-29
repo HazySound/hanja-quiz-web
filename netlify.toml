@@ -1,0 +1,14 @@
+# Netlify 빌드 설정 — 깃허브 연동 시 이 파일대로 자동 빌드/배포된다.
+[build]
+  command = "npm run build"   # Vite 프로덕션 빌드
+  publish = "dist"            # 배포할 산출물 폴더
+
+[build.environment]
+  NODE_VERSION = "22"         # 로컬과 동일(Vite 8 요구 버전 충족)
+
+# SPA 폴백: React Router 경로(/quiz 등)로 새로고침·딥링크해도 index.html을 주도록.
+# (없으면 폰에서 /quiz 새로고침 시 404)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

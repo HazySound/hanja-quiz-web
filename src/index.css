@@ -1,14 +1,17 @@
 @import "tailwindcss";
 
-/* 앱 색상 팔레트 (데스크탑 버전 다크 테마와 결) */
+/* 앱 색상 팔레트 — 데스크탑 CTk 다크 테마의 결을 그대로 가져와 다듬음.
+   카드 hover는 CTk의 푸르스름한 #33425c 감각을, 블루/골드는 시그니처 악센트. */
 @theme {
-  --color-bg: #1b1b1f;
-  --color-card: #2a2a31;
-  --color-card-hover: #34343d;
-  --color-accent: #4a9eff;
+  --color-bg: #18181c;        /* 먹빛에 가까운 배경 */
+  --color-card: #26262c;
+  --color-card-hover: #2f3b52; /* CTk의 푸른 hover 계승 */
+  --color-line: #36363f;       /* 헤어라인·격자 */
+  --color-accent: #2f86d6;     /* CTk 시그니처 블루(#1f6aa5) 화면용으로 살짝 밝게 */
   --color-good: #2e9e5b;
   --color-bad: #e05260;
-  --color-gold: #e0b341;
+  --color-seal: #c0392b;       /* 낙관 도장 빨강 */
+  --color-gold: #e8b923;       /* CTk 골드 */
   --color-muted: #9aa0a6;
 }
 
@@ -34,4 +37,11 @@ body {
 .hanja {
   font-family: "Apple SD Gothic Neo", "PingFang SC", "Noto Sans CJK KR",
     "Malgun Gothic", serif;
+}
+
+/* 브랜드 한자(漢)는 명조 계열로 — 붓글씨/연습칸 느낌. iOS=Songti/AppleMyungjo */
+.brand-hanja {
+  font-family: "AppleMyungjo", "Songti SC", "Noto Serif KR",
+    "Nanum Myeongjo", "Batang", serif;
+  font-weight: 600;
 }

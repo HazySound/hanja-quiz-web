@@ -1,6 +1,7 @@
 import { Routes, Route, useLocation } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import Menu from './screens/Menu.jsx'
+import Quiz from './screens/Quiz.jsx'
 import Placeholder from './screens/Placeholder.jsx'
 
 export default function App() {
@@ -12,7 +13,7 @@ export default function App() {
         <AnimatePresence mode="wait">
           <Routes location={location} key={location.pathname}>
             <Route path="/" element={<Menu />} />
-            <Route path="/quiz" element={<Placeholder title="랜덤 풀이" />} />
+            <Route path="/quiz" element={<Quiz />} />
             <Route path="/builder" element={<Placeholder title="자유 출제" />} />
             <Route path="/chapters" element={<Placeholder title="챕터별 풀이" />} />
             <Route path="/flashcards" element={<Placeholder title="플래시카드" />} />
