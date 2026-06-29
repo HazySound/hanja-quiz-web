@@ -176,7 +176,7 @@ export default function Quiz() {
           {count}문제 시작
         </motion.button>
         {/* 캐시/배포 확인용 임시 빌드 마커 — 새 버전이 적용되면 이 값이 보임. */}
-        <div className="text-muted mt-3 text-center text-xs">build: kb-fix-3</div>
+        <div className="text-muted mt-3 text-center text-xs">build: kb-fix-4</div>
       </Shell>
     )
   }
@@ -234,8 +234,19 @@ export default function Quiz() {
     )
   }
 
-  // ----- 풀이 (상단 고정 / 가운데 스크롤 / 하단 버튼 고정 3단) -----
+  // ----- 풀이 -----
   const isHanjaOption = q.fmt === MC && q.dir === R2H // 보기가 한자 글자인지
+  const bottomBtn = (
+    <button
+      onClick={onBottom}
+      disabled={q.fmt === MC && selected === null}
+      className="w-full rounded-2xl py-3.5 font-bold transition-colors
+                 bg-accent text-white hover:opacity-90
+                 disabled:cursor-default disabled:bg-card disabled:text-muted disabled:hover:opacity-100"
+    >
+      {bottomLabel(q, isAnswered, graded, more)}
+    </button>
+  )
   return (
     <motion.div
       initial={{ opacity: 0, x: 16 }}
@@ -266,50 +277,26 @@ export default function Quiz() {
         </div>
       </div>
 
-      {/* 가운데: 문제 + 보기/입력. 넘치면 이 영역만 스크롤.
-          'safe center' = 평소엔 가운데, 키보드로 좁아져 넘치면 위부터(안 잘리게). */}
-      <div
-        className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto py-4"
-        style={{ justifyContent: 'safe center' }}
-      >
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={qi}
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            transition={{ duration: 0.2 }}
-            className="flex flex-col gap-4"
-          >
-            {/* 문제 */}
-            <div className="rounded-2xl bg-card py-7 text-center">
-              <div className={q.dir === H2R ? 'brand-hanja text-7xl leading-none' : 'text-3xl font-bold'}>
-                {q.prompt}
+      {q.fmt === SA ? (
+        /* 단답식: 위에서부터 쌓는다 — 입력칸이 상단에 있으면 iOS가 화면을 밀어올리지 않음.
+           아래 빈 공간을 키보드가 덮어도 문제·입력·버튼이 위에 그대로 보인다. */
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pt-4">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={qi}
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.2 }}
+              className="flex flex-col gap-4"
+            >
+              {/* 문제(컴팩트) */}
+              <div className="rounded-2xl bg-card py-6 text-center">
+                <div className="brand-hanja text-6xl leading-none">{q.prompt}</div>
+                <div className="text-muted mt-3 text-sm">{q.sub}</div>
               </div>
-              <div className="text-muted mt-3 text-sm">{q.sub}</div>
-            </div>
 
-            {/* 객관식 보기 */}
-            {q.fmt === MC && (
-              <div className="flex flex-col gap-2.5">
-                {q.options.map((opt, i) => (
-                  <motion.button
-                    key={i}
-                    whileTap={selected === null ? { scale: 0.98 } : undefined}
-                    onClick={() => pick(i)}
-                    className={optionClass(i, selected, q.answerIndex)}
-                  >
-                    <span className="flex items-center justify-between gap-3">
-                      <span className={isHanjaOption ? 'hanja text-2xl' : 'text-base'}>{opt}</span>
-                      {selected !== null && <span className="text-muted text-sm">{q.notes[i]}</span>}
-                    </span>
-                  </motion.button>
-                ))}
-              </div>
-            )}
-
-            {/* 단답식 입력 */}
-            {q.fmt === SA && (
+              {/* 입력칸 */}
               <div className="flex flex-col gap-2.5">
                 {q.answers.map((ans, i) => (
                   <div key={i}>
@@ -335,23 +322,58 @@ export default function Quiz() {
                   </div>
                 ))}
               </div>
-            )}
-          </motion.div>
-        </AnimatePresence>
-      </div>
 
-      {/* 하단 고정: 채점/다음 (자리 항상 예약). */}
-      <div className="shrink-0 pt-3">
-        <button
-          onClick={onBottom}
-          disabled={q.fmt === MC && selected === null}
-          className="w-full rounded-2xl py-3.5 font-bold transition-colors
-                     bg-accent text-white hover:opacity-90
-                     disabled:cursor-default disabled:bg-card disabled:text-muted disabled:hover:opacity-100"
-        >
-          {bottomLabel(q, isAnswered, graded, more)}
-        </button>
-      </div>
+              {/* 채점/다음 (입력 바로 아래) */}
+              {bottomBtn}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      ) : (
+        /* 객관식: 가운데 정렬 + 버튼 하단 고정 (키보드 없으니 3단 유지). */
+        <>
+          <div
+            className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto py-4"
+            style={{ justifyContent: 'safe center' }}
+          >
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={qi}
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+                className="flex flex-col gap-4"
+              >
+                {/* 문제 */}
+                <div className="rounded-2xl bg-card py-7 text-center">
+                  <div className={q.dir === H2R ? 'brand-hanja text-7xl leading-none' : 'text-3xl font-bold'}>
+                    {q.prompt}
+                  </div>
+                  <div className="text-muted mt-3 text-sm">{q.sub}</div>
+                </div>
+
+                {/* 보기 */}
+                <div className="flex flex-col gap-2.5">
+                  {q.options.map((opt, i) => (
+                    <motion.button
+                      key={i}
+                      whileTap={selected === null ? { scale: 0.98 } : undefined}
+                      onClick={() => pick(i)}
+                      className={optionClass(i, selected, q.answerIndex)}
+                    >
+                      <span className="flex items-center justify-between gap-3">
+                        <span className={isHanjaOption ? 'hanja text-2xl' : 'text-base'}>{opt}</span>
+                        {selected !== null && <span className="text-muted text-sm">{q.notes[i]}</span>}
+                      </span>
+                    </motion.button>
+                  ))}
+                </div>
+              </motion.div>
+            </AnimatePresence>
+          </div>
+          <div className="shrink-0 pt-3">{bottomBtn}</div>
+        </>
+      )}
     </motion.div>
   )
 }
