@@ -175,6 +175,8 @@ export default function Quiz() {
         >
           {count}문제 시작
         </motion.button>
+        {/* 캐시/배포 확인용 임시 빌드 마커 — 새 버전이 적용되면 이 값이 보임. */}
+        <div className="text-muted mt-3 text-center text-xs">build: kb-fix-3</div>
       </Shell>
     )
   }
