@@ -65,7 +65,7 @@ export default function Menu() {
   }
 
   return (
-    <motion.div variants={container} initial="hidden" animate="show">
+    <motion.div variants={container} initial="hidden" animate="show" className="min-h-0 flex-1 overflow-y-auto">
       {/* 히어로 */}
       <motion.header variants={item} className="mb-7 mt-1 flex items-center gap-4">
         <PracticeMark />

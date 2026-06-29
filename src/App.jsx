@@ -8,32 +8,11 @@ import Placeholder from './screens/Placeholder.jsx'
 export default function App() {
   const location = useLocation()
 
-  // 앱 높이를 '실제 보이는 영역'(키보드 위)에 맞춘다. iOS는 키보드가 떠도 dvh를
-  // 안 줄이므로 VisualViewport로 직접 읽어 --app-height 갱신 → 키보드 stuck 방지.
+  // 입력 포커스 해제(키보드 닫힘) 시 혹시 남은 윈도우 스크롤 드리프트를 0으로 — 안전장치.
   useEffect(() => {
-    const vv = window.visualViewport
-    const setH = () => {
-      const h = vv ? vv.height : window.innerHeight
-      document.documentElement.style.setProperty('--app-height', `${h}px`)
-    }
-    setH()
-    vv?.addEventListener('resize', setH)
-    vv?.addEventListener('scroll', setH)
-    window.addEventListener('resize', setH)
-
-    // 입력 포커스 해제(키보드 닫힘) 시 혹시 남은 스크롤 드리프트를 0으로 — stuck 방지.
-    const onFocusOut = () => {
-      window.scrollTo(0, 0)
-      document.querySelector('.app-shell')?.scrollTo({ top: 0 })
-    }
+    const onFocusOut = () => window.scrollTo(0, 0)
     document.addEventListener('focusout', onFocusOut)
-
-    return () => {
-      vv?.removeEventListener('resize', setH)
-      vv?.removeEventListener('scroll', setH)
-      window.removeEventListener('resize', setH)
-      document.removeEventListener('focusout', onFocusOut)
-    }
+    return () => document.removeEventListener('focusout', onFocusOut)
   }, [])
 
   return (

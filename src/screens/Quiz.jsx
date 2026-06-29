@@ -176,7 +176,7 @@ export default function Quiz() {
           {count}문제 시작
         </motion.button>
         {/* 캐시/배포 확인용 임시 빌드 마커 — 새 버전이 적용되면 이 값이 보임. */}
-        <div className="text-muted mt-3 text-center text-xs">build: kb-fix-4</div>
+        <div className="text-muted mt-3 text-center text-xs">build: kb-fix-5</div>
       </Shell>
     )
   }
@@ -401,7 +401,7 @@ function saInputClass(graded, ok) {
   return ok ? `${base} border-good/60 bg-good/15` : `${base} border-bad/60 bg-bad/15`
 }
 
-// 공통 화면 틀(뒤로 + 제목 + 진입 모션).
+// 공통 화면 틀: 헤더(뒤로+제목)는 고정, 본문만 내부 스크롤.
 function Shell({ onBack, title, children }) {
   return (
     <motion.div
@@ -409,15 +409,18 @@ function Shell({ onBack, title, children }) {
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -16 }}
       transition={{ duration: 0.18 }}
+      className="flex min-h-0 flex-1 flex-col"
     >
-      <button
-        onClick={onBack}
-        className="mb-4 self-start rounded-xl bg-card px-4 py-2 text-sm hover:bg-card-hover"
-      >
-        ◀ 뒤로
-      </button>
-      <h1 className="mb-4 text-2xl font-bold tracking-tight">{title}</h1>
-      {children}
+      <div className="shrink-0">
+        <button
+          onClick={onBack}
+          className="mb-4 rounded-xl bg-card px-4 py-2 text-sm hover:bg-card-hover"
+        >
+          ◀ 뒤로
+        </button>
+        <h1 className="mb-4 text-2xl font-bold tracking-tight">{title}</h1>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
     </motion.div>
   )
 }

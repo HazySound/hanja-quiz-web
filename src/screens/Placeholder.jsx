@@ -11,7 +11,7 @@ export default function Placeholder({ title }) {
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -16 }}
       transition={{ duration: 0.18 }}
-      className="flex flex-col"
+      className="flex min-h-0 flex-1 flex-col overflow-y-auto"
     >
       <button
         onClick={() => nav(-1)}
