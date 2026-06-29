@@ -8,18 +8,35 @@ import { seenCounts } from './progress.js'
 
 export const H2R = 'h2r' // 한자 보여주고 훈음 고르기
 export const R2H = 'r2h' // 훈음 보여주고 한자 고르기
+export const MC = 'mc' // 객관식
+export const SA = 'sa' // 단답식
 const N_OPTIONS = 4
 
 let _cache = null
-let _index = null
+let _grades = null
 
 // public/data/hanja.json 로드(최초 1회). vite-plugin-pwa가 오프라인 캐싱.
 export async function loadHanja() {
   if (_cache) return _cache
   const res = await fetch(import.meta.env.BASE_URL + 'data/hanja.json')
   if (!res.ok) throw new Error('한자 데이터를 불러오지 못했어요.')
-  _cache = (await res.json()).hanja
+  const json = await res.json()
+  _cache = json.hanja
+  _grades = json.grades
   return _cache
+}
+
+// 급수 선택 옵션 [{ grade, label, desc }] (9급~1급).
+export function gradeOptions() {
+  return _grades?.options || []
+}
+
+// 급수 필터. grade=null이면 전체. (급수 번호: 9=쉬움 ~ 1=어려움)
+//   only=false(누적): g >= grade — 더 쉬운 급수까지 포함(예: 5급 → 5~9급).
+//   only=true(배정한자만): g === grade — 그 급수에 배정된 글자만.
+export function filterByGrade(all, grade, only) {
+  if (grade == null) return all
+  return all.filter((h) => (only ? h.g === grade : h.g >= grade))
 }
 
 export function readingText(h) {
@@ -30,12 +47,12 @@ function eums(h) {
   return [...new Set(h.r.map(([, eum]) => eum))]
 }
 
-// 같은 음 / 같은 (부수,획수) 색인 — 헷갈리는 보기 후보.
-function indexes(all) {
-  if (_index) return _index
+// 같은 음 / 같은 (부수,획수) 색인 — 헷갈리는 보기 후보. 출제 풀(급수 필터된 집합)
+// 기준으로 매번 새로 만든다(보기도 선택 급수 안에서 나오게).
+function buildIndexes(pool) {
   const byEum = new Map()
   const byShape = new Map()
-  for (const h of all) {
+  for (const h of pool) {
     for (const e of eums(h)) {
       if (!byEum.has(e)) byEum.set(e, [])
       byEum.get(e).push(h)
@@ -46,8 +63,7 @@ function indexes(all) {
       byShape.get(k).push(h)
     }
   }
-  _index = { byEum, byShape }
-  return _index
+  return { byEum, byShape }
 }
 
 function shuffle(arr) {
@@ -93,14 +109,14 @@ function pickDistractors(target, pools, all, key, need, exclude) {
   return chosen
 }
 
-function makeH2R(target, all) {
-  const { byEum, byShape } = indexes(all)
+function makeH2R(target, pool, idx) {
+  const { byEum, byShape } = idx
   const sound = eums(target).flatMap((e) => byEum.get(e) || [])
   const shape = byShape.get(`${target.rad}/${target.s}`) || []
   const distractors = pickDistractors(
     target,
     [sound, shape],
-    all,
+    pool,
     readingText,
     N_OPTIONS - 1,
   )
@@ -117,8 +133,8 @@ function makeH2R(target, all) {
   }
 }
 
-function makeR2H(target, all) {
-  const { byEum, byShape } = indexes(all)
+function makeR2H(target, pool, idx) {
+  const { byEum, byShape } = idx
   const [hun, eum] = target.r[Math.floor(Math.random() * target.r.length)]
   // 정답과 같은 훈음을 가진 한자는 보기에서 제외(답이 모호해지는 것 방지).
   const sameReading = (h) => h.r.some(([hh, ee]) => hh === hun && ee === eum)
@@ -127,7 +143,7 @@ function makeR2H(target, all) {
   const distractors = pickDistractors(
     target,
     [shape, sound],
-    all,
+    pool,
     (h) => h.c,
     N_OPTIONS - 1,
     sameReading,
@@ -144,17 +160,64 @@ function makeR2H(target, all) {
   }
 }
 
+// 단답식: 한자 보여주고 훈·음을 직접 입력. 훈음이 N개면 입력칸 N개.
+function makeSA(target) {
+  const answers = target.r.map(([hun, eum]) => `${hun} ${eum}`)
+  return {
+    fmt: SA,
+    dir: H2R,
+    prompt: target.c,
+    sub: answers.length > 1 ? `훈·음을 입력하세요 (훈음 ${answers.length}개)` : '훈·음을 입력하세요',
+    answers,
+    hanjaId: target.id,
+  }
+}
+
+function normalize(s) {
+  return s.replace(/ /g, '').trim()
+}
+
+// core.py grade_sa 이식: 입력들 ↔ 정답 훈음 집합을 순서 무관 최대 이분매칭(증가경로).
+// 빈칸/오타/중복은 오답. (사전 캐시 기반 대체표현 alts는 추후 — 지금은 정답 그대로만 인정)
+export function gradeSA(answers, inputs) {
+  const accept = answers.map((a) => new Set([normalize(a)]))
+  const norm = inputs.map(normalize)
+  const slotFor = new Array(accept.length).fill(-1)
+  const augment = (i, seen) => {
+    for (let j = 0; j < accept.length; j++) {
+      if (norm[i] && accept[j].has(norm[i]) && !seen.has(j)) {
+        seen.add(j)
+        if (slotFor[j] === -1 || augment(slotFor[j], seen)) {
+          slotFor[j] = i
+          return true
+        }
+      }
+    }
+    return false
+  }
+  for (let i = 0; i < inputs.length; i++) augment(i, new Set())
+  const matched = new Set(slotFor.filter((x) => x !== -1))
+  const per = inputs.map((_, i) => matched.has(i))
+  const allOk = per.every(Boolean) && slotFor.every((j) => j !== -1)
+  return { allOk, per }
+}
+
 // 출제 순서: 안 풀어봤거나 적게 풀어본 한자 먼저(동률은 랜덤).
 function orderBySeen(all) {
   const seen = seenCounts()
   return shuffle(all).sort((a, b) => (seen[a.id] || 0) - (seen[b.id] || 0))
 }
 
-// 랜덤 풀이 세션 생성. dir: 'mix' | H2R | R2H, count: 문제 수.
-export function buildRandomSession(all, { count = 20, dir = 'mix' } = {}) {
-  const targets = orderBySeen(all).slice(0, count)
+// 랜덤 풀이 세션 생성.
+//   fmt: MC|SA, dir(객관식만): 'mix'|H2R|R2H, count: 문제 수,
+//   grade: 급수(null=전체), only: 배정한자만 여부.
+export function buildRandomSession(all, { count = 20, dir = 'mix', fmt = MC, grade = null, only = false } = {}) {
+  const pool = filterByGrade(all, grade, only)
+  const targets = orderBySeen(pool).slice(0, count)
+  if (fmt === SA) return targets.map((t) => makeSA(t))
+  const idx = buildIndexes(pool)
   return targets.map((t) => {
     const d = dir === 'mix' ? (Math.random() < 0.5 ? H2R : R2H) : dir
-    return d === H2R ? makeH2R(t, all) : makeR2H(t, all)
+    return { fmt: MC, ...(d === H2R ? makeH2R(t, pool, idx) : makeR2H(t, pool, idx)) }
   })
 }
