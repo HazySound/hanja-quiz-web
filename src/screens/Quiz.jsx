@@ -83,6 +83,8 @@ export default function Quiz() {
   // 단답식: 채점 버튼.
   function submitSA() {
     if (graded) return
+    // 채점하면 키보드를 닫는다(입력 끝). VisualViewport가 복귀하며 레이아웃 원상복구.
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
     const vals = q.answers.map((_, i) => inputs[i] || '')
     const { allOk, per } = gradeSA(q.answers, vals)
     record(q.hanjaId, allOk)
@@ -262,8 +264,12 @@ export default function Quiz() {
         </div>
       </div>
 
-      {/* 가운데: 문제 + 보기/입력. 넘치면 이 영역만 스크롤. */}
-      <div className="flex min-h-0 flex-1 flex-col justify-center gap-4 overflow-y-auto py-4">
+      {/* 가운데: 문제 + 보기/입력. 넘치면 이 영역만 스크롤.
+          'safe center' = 평소엔 가운데, 키보드로 좁아져 넘치면 위부터(안 잘리게). */}
+      <div
+        className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto py-4"
+        style={{ justifyContent: 'safe center' }}
+      >
         <AnimatePresence mode="wait">
           <motion.div
             key={qi}

@@ -40,6 +40,12 @@ body {
    사파리 툴바가 보이든 숨든 '실제 보이는 영역'에 정확히 맞춘다.
    내용이 넘칠 때(부수 picker·목록 등)만 이 안에서 스크롤. */
 .app-shell {
+  /* 뷰포트에 못박는다(position:fixed) → iOS가 입력 포커스로 문서를 스크롤해도
+     셸이 안 밀림(키보드 닫혀도 stuck 안 됨). */
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
   height: 100dvh; /* 폴백 */
   /* 키보드가 뜨면 그 위의 '실제 보이는 높이'에 맞춤(App.jsx가 VisualViewport로 --app-height 갱신).
      → 키보드만큼 앱이 줄어 입력칸·버튼이 키보드 위에 보이고, 닫히면 자동 복귀. */
