@@ -239,12 +239,14 @@ export default function Quiz() {
 }
 
 // 보기 버튼 색: 정답=초록, 내가 고른 오답=빨강, 나머지=흐리게.
+// ring(박스 바깥)이 아니라 border-2(박스 안)로 그린다 — 가운데 스크롤 영역이 가로로
+// 클리핑해 ring 좌·우가 잘리는 문제 방지. 항상 같은 두께(투명↔유색)라 정렬·폭 안 변함.
 function optionClass(i, answered, answerIndex) {
-  const base = 'rounded-2xl p-4 text-left transition-colors ring-1'
-  if (answered === null) return `${base} bg-card ring-transparent hover:bg-card-hover hover:ring-line`
-  if (i === answerIndex) return `${base} bg-good/15 ring-good/60`
-  if (i === answered) return `${base} bg-bad/15 ring-bad/60`
-  return `${base} bg-card/50 ring-transparent opacity-60`
+  const base = 'rounded-2xl border-2 p-4 text-left transition-colors'
+  if (answered === null) return `${base} border-transparent bg-card hover:border-line hover:bg-card-hover`
+  if (i === answerIndex) return `${base} border-good/60 bg-good/15`
+  if (i === answered) return `${base} border-bad/60 bg-bad/15`
+  return `${base} border-transparent bg-card/50 opacity-60`
 }
 
 // 공통 화면 틀(뒤로 + 제목 + 진입 모션).
