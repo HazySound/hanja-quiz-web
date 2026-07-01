@@ -11,9 +11,11 @@
       content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content"
     />
     <meta name="theme-color" content="#1b1b1f" />
-    <!-- iOS에서 홈화면 추가 시 전체화면 앱처럼 -->
+    <!-- iOS에서 홈화면 추가 시 전체화면 앱처럼.
+         status-bar-style: black-translucent(콘텐츠가 상태바 밑까지)을 빼서, 콘텐츠가
+         다이나믹아일랜드/상태바 밑으로 안 들어가게(스크롤해도 안 가려짐). -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="한자퀴즈" />
     <title>한자 퀴즈</title>
   </head>

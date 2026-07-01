@@ -2,13 +2,16 @@
 [build]
   command = "npm run build"   # Vite 프로덕션 빌드
   publish = "dist"            # 배포할 산출물 폴더
+  functions = "netlify/functions"  # 서버리스 함수(공휴일 프록시 등)
 
 [build.environment]
   NODE_VERSION = "22"         # 로컬과 동일(Vite 8 요구 버전 충족)
 
-# SPA 폴백: React Router 경로(/quiz 등)로 새로고침·딥링크해도 index.html을 주도록.
-# (없으면 폰에서 /quiz 새로고침 시 404)
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
+# 로컬 개발: `netlify dev`가 Vite 개발서버를 띄우고(5173) 함수와 함께 8888로 서빙.
+[dev]
+  command = "npm run dev"
+  targetPort = 5173
+
+# SPA 폴백은 public/_redirects 로 옮김(배포 dist에 복사됨).
+# netlify.toml에 두면 netlify dev에서 dist 부재 탓에 Vite 내부 요청까지 index.html로 돌려 충돌남.
+# 개발(netlify dev/vite)에선 Vite가 SPA 라우팅을 직접 처리하므로 리다이렉트 불필요.

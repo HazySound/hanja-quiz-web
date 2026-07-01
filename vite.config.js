@@ -5,6 +5,9 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // 폰 테스트용: LAN 바인딩(host) + 터널(loca.lt 등) 호스트 허용. dev/preview 둘 다.
+  server: { host: true, allowedHosts: true },
+  preview: { host: true, allowedHosts: true },
   plugins: [
     react(),
     tailwindcss(),

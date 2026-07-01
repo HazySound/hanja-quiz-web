@@ -1,23 +1,35 @@
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   loadHanja,
-  buildRandomSession,
+  loadExamples,
+  buildSession,
+  resolveScope,
   gradeSA,
-  gradeOptions,
-  filterByGrade,
+  readingFor,
+  readingText,
+  exampleWords,
   MC,
   SA,
+  WORD,
   H2R,
   R2H,
 } from '../lib/hanja.js'
-import { record } from '../lib/progress.js'
+import { record, statsOf, inAnyList } from '../lib/progress.js'
+import * as wordbook from '../lib/wordbook.js'
+import * as schedule from '../lib/schedule.js'
+import * as session from '../lib/session.js'
+import { getGrade, getOnly, getQuickCfg, setQuickCfg } from '../lib/prefs.js'
+import WordSheet from '../components/WordSheet.jsx'
+import HanjaSheet from '../components/HanjaSheet.jsx'
+import HanjaListSheet from '../components/HanjaListSheet.jsx'
+import ScopeBuilder from '../components/ScopeBuilder.jsx'
 
-const COUNTS = [10, 20, 30, 50]
 const FORMATS = [
   { key: MC, label: '객관식' },
   { key: SA, label: '단답식' },
+  { key: WORD, label: '단어' },
 ]
 const DIRS = [
   { key: 'mix', label: '섞기' },
@@ -27,20 +39,62 @@ const DIRS = [
 
 export default function Quiz() {
   const nav = useNavigate()
+  const location = useLocation()
+  const initial = location.state?.initial || null // 챕터에서 왔으면 음가 초성 프리셋
+  const presetScope = location.state?.scope || null // 내 목록 등에서 넘어온 고정 범위(목록)
+  const presetTitle = location.state?.title || null
+  const scheduleMark = !!location.state?.scheduleMark // 스케줄에서 진입 → 푼 한자 자동 학습완료 기록
+  const isFill = !!location.state?.fill // 개별 한자 '바로 채우기' — 세션 저장/복원 안 함
+  const reviewKey = location.state?.reviewKey || null // 복습이면 진도 슬롯('all'|'date:...')
+  const isReview = !!reviewKey
+  const slot = isReview ? `rev:${reviewKey}:quiz` : 'quiz'
+  const saveOn = (scheduleMark || isReview) && !isFill // 세션 저장(복습도 저장, 진도기록은 X)
+  const wantResume = !isFill && (!!location.state?.resume || scheduleMark || isReview)
+  const launchedMode = location.state?.mode || 'quiz' // 'quiz'(문제) | 'word'(단어) | 'wrong'(오답)
+  // 이어서 하기: 저장된 세션이 미완이면 그 자리에서 복원(한 번만 계산).
+  // 메인 '이어서'(resume)는 무조건 / 오늘학습 재진입(scheduleMark)은 같은 날·같은 모드만.
+  const restoredRef = useRef(undefined)
+  if (restoredRef.current === undefined) {
+    const rs = wantResume ? session.load(slot) : null
+    const fresh = rs && (location.state?.resume || isReview || (rs.date === schedule.todayStr() && (rs.mode || 'quiz') === launchedMode))
+    restoredRef.current = fresh && rs.questions?.length && rs.qi < rs.questions.length ? rs : null
+  }
+  const restored = restoredRef.current
+  const free = !presetScope && !initial // 빠른 학습(자유) — 한 페이지에 범위+형식+방향, 설정은 localStorage에 기억
+  const savedQuick = free ? getQuickCfg() : null
+  const screenTitle = presetTitle || (initial ? `챕터 ${initial}` : !presetScope ? '빠른 학습' : '문제 풀기')
+  const fromSub = !!(initial || presetScope) // 챕터·목록에서 진입(뒤로=메인 아님) → 홈버튼 노출
+  const noWord = !!location.state?.noWord // 단어가 별도 버튼인 맥락(스케줄·복습 문제) → 형식에서 단어 제외
+  const fmtOptions = noWord ? FORMATS.filter((f) => f.key !== WORD) : FORMATS
+  // 뒤로: state.back 있으면 그 화면(예: 캘린더+선택날짜)으로, 아니면 직전으로.
+  const backOut = () => (location.state?.back ? nav('/schedule', { state: location.state.back }) : nav(-1))
   const [all, setAll] = useState(null)
   const [error, setError] = useState(null)
 
   // phase: 'config' | 'play' | 'done'
-  const [phase, setPhase] = useState('config')
-  const [count, setCount] = useState(20)
-  const [fmt, setFmt] = useState(MC)
-  const [dir, setDir] = useState('mix')
-  const [grade, setGrade] = useState(null) // null = 전체
-  const [only, setOnly] = useState(false) // 배정한자만
+  const [phase, setPhase] = useState(restored ? 'play' : 'config')
+  const [fmt, setFmt] = useState(restored ? restored.fmt : savedQuick?.fmt ?? location.state?.fmt ?? MC)
+  const [dir, setDir] = useState(restored ? restored.dir : savedQuick?.dir ?? 'mix')
+  const [marking, setMarking] = useState(restored ? !!restored.scheduleMark : scheduleMark)
+  const grade = getGrade() // 전역 출제 범위(메인에서 설정)
+  const only = getOnly()
+  // 범위(빌더). 프리셋(목록) > 챕터 > 전체. 설정은 화면 state로만 유지(풀이↔설정 복원, 메인 나가면 초기화).
+  const [scope, setScope] = useState(() =>
+    presetScope
+      ? presetScope
+      : initial
+        ? { kind: 'chapter', initials: [initial], order: 'seen', count: 20 }
+        : savedQuick?.scope || { kind: 'all', order: 'seen', count: 20 },
+  )
 
-  const [questions, setQuestions] = useState([])
-  const [qi, setQi] = useState(0)
-  const [results, setResults] = useState([]) // [{ q, correct }]
+  // 빠른 학습 설정 기억(범위·형식·방향).
+  useEffect(() => {
+    if (free) setQuickCfg({ scope, fmt, dir })
+  }, [free, scope, fmt, dir])
+
+  const [questions, setQuestions] = useState(restored ? restored.questions : [])
+  const [qi, setQi] = useState(restored ? restored.qi : 0)
+  const [results, setResults] = useState(restored ? restored.results || [] : []) // [{ q, correct }]
 
   // 객관식: 고른 보기 index. 단답식: 입력칸 값들 + 채점 여부/칸별 정오.
   const [selected, setSelected] = useState(null)
@@ -48,17 +102,39 @@ export default function Quiz() {
   const [graded, setGraded] = useState(false)
   const [saPer, setSaPer] = useState(null)
 
+  const [sheetWord, setSheetWord] = useState(null) // 단어 상세 바텀시트
+  const [sheetChar, setSheetChar] = useState(null) // 한자 상세 바텀시트(채점 후 사전)
+  const [listHanja, setListHanja] = useState(null) // 한자 '목록에 담기' 시트
+  const [exReady, setExReady] = useState(false) // 예시 데이터 로드됨
+  const [bookVer, setBookVer] = useState(0) // 단어장 변경 시 칩 금색 갱신용
+  const [, setFavVer] = useState(0) // 즐겨찾기 ★ 갱신용
+
   useEffect(() => {
     loadHanja().then(setAll).catch((e) => setError(e.message))
+    loadExamples().then(() => setExReady(true)) // 정답 공개 예시단어용(백그라운드)
   }, [])
 
-  function start() {
-    setQuestions(buildRandomSession(all, { count, dir, fmt, grade, only }))
+  async function start() {
+    if (fmt === WORD) await loadExamples() // 단어형은 예시 데이터 필요
+    const qs = buildSession(all, { scope: { grade, only, ...scope }, dir, fmt })
+    setQuestions(qs)
     setResults([])
     setQi(0)
     resetAnswer()
     setPhase('play')
+    if (scheduleMark) setMarking(true)
+    if (saveOn) {
+      session.save(slot, { kind: 'quiz', questions: qs, qi: 0, results: [], fmt, dir, mode: launchedMode, scheduleMark, date: schedule.todayStr() })
+    }
   }
+
+  // 진행 위치·결과를 세션에 저장(이어서 하기용). 스케줄 학습 또는 복습(채우기 제외).
+  useEffect(() => {
+    if (!(marking || isReview) || phase !== 'play' || isFill) return
+    const sess = session.load(slot)
+    if (sess) session.save(slot, { ...sess, qi, results })
+  }, [qi, results, marking, phase])
+
 
   function resetAnswer() {
     setSelected(null)
@@ -69,13 +145,15 @@ export default function Quiz() {
 
   const q = questions[qi]
   const more = qi + 1 < questions.length
-  const isAnswered = q?.fmt === SA ? graded : selected !== null
+  const isInput = q?.fmt === SA || q?.fmt === WORD // 입력형(단답식·단어형)
+  const isAnswered = isInput ? graded : selected !== null
 
   // 객관식: 보기 탭 = 즉시 채점.
   function pick(i) {
     if (selected !== null) return
     const correct = i === q.answerIndex
     record(q.hanjaId, correct)
+    if (marking) schedule.recordItem(q.hanjaId, 'quiz') // 객관식=문제 항목
     setSelected(i)
     setResults((r) => [...r, { q, correct }])
   }
@@ -87,7 +165,14 @@ export default function Quiz() {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
     const vals = q.answers.map((_, i) => inputs[i] || '')
     const { allOk, per } = gradeSA(q.answers, vals)
-    record(q.hanjaId, allOk)
+    if (q.fmt === WORD) {
+      // 단어형: 한자 오답노트와 무관(구성 한자를 개별 오답으로 넣지 않음). 단어 단위로만 기록.
+      const [hj, rd, mean] = q.word
+      wordbook.recordWord(hj, rd, mean || '', allOk)
+    } else {
+      record(q.hanjaId, allOk) // 한자: 출제/정답/오답노트 기록
+    }
+    if (marking) schedule.recordItem(q.hanjaId, q.fmt === WORD ? 'word' : 'quiz')
     setSaPer(per)
     setGraded(true)
     setResults((r) => [...r, { q, correct: allOk }])
@@ -99,25 +184,26 @@ export default function Quiz() {
       resetAnswer()
     } else {
       setPhase('done')
+      if (saveOn) session.clear(slot) // 끝까지 풀면 이어서 세션 정리
     }
   }
 
   function onBottom() {
-    if (q.fmt === SA && !graded) submitSA()
+    if (isInput && !graded) submitSA()
     else if (isAnswered) next()
   }
 
   // ----- 로딩 / 에러 -----
   if (error) {
     return (
-      <Shell onBack={() => nav(-1)} title="랜덤 풀이">
+      <Shell onBack={() => nav(-1)} onHome={fromSub ? () => nav('/') : null} title={screenTitle}>
         <p className="text-bad text-sm">{error}</p>
       </Shell>
     )
   }
   if (!all) {
     return (
-      <Shell onBack={() => nav(-1)} title="랜덤 풀이">
+      <Shell onBack={() => nav(-1)} onHome={fromSub ? () => nav('/') : null} title={screenTitle}>
         <p className="text-muted text-sm">한자 데이터를 불러오는 중…</p>
       </Shell>
     )
@@ -125,58 +211,46 @@ export default function Quiz() {
 
   // ----- 설정 -----
   if (phase === 'config') {
-    const poolCount = filterByGrade(all, grade, only).length
     return (
-      <Shell onBack={() => nav(-1)} title="랜덤 풀이">
-        <p className="text-muted mb-6 text-sm">덜 풀어본 한자부터 무작위로 출제해요.</p>
-
-        <Field label="문제 수">
-          <Segmented options={COUNTS.map((c) => ({ key: c, label: String(c) }))} value={count} onChange={setCount} />
-        </Field>
-        <Field label="급수">
-          <div className="flex flex-wrap gap-2">
-            <Chip active={grade === null} onClick={() => setGrade(null)}>
-              전체
-            </Chip>
-            {gradeOptions().map((o) => (
-              <Chip key={o.grade} active={grade === o.grade} onClick={() => setGrade(o.grade)}>
-                {o.label}
-              </Chip>
-            ))}
+      <Shell onBack={backOut} onHome={fromSub ? () => nav('/') : null} title={screenTitle}>
+        {presetScope ? (
+          <div className="text-muted mb-2 text-sm">
+            출제 대상{' '}
+            <span className="text-gold font-semibold">
+              {resolveScope(all, { grade, only, ...scope }).length}자
+            </span>{' '}
+            {presetTitle && <span>({presetTitle})</span>}
           </div>
-          <div className="text-muted mt-2 text-xs">출제 대상 {poolCount}자</div>
-        </Field>
-        {grade !== null && (
-          <Field label="범위">
-            <Segmented
-              options={[
-                { key: false, label: '누적' },
-                { key: true, label: '배정한자만' },
-              ]}
-              value={only}
-              onChange={setOnly}
-            />
-          </Field>
-        )}
-        <Field label="형식">
-          <Segmented options={FORMATS} value={fmt} onChange={setFmt} />
-        </Field>
-        {fmt === MC && (
-          <Field label="출제 방향">
-            <Segmented options={DIRS} value={dir} onChange={setDir} />
-          </Field>
+        ) : (
+          <ScopeBuilder all={all} grade={grade} only={only} scope={scope} onChange={setScope} />
         )}
 
-        <motion.button
-          whileTap={{ scale: 0.98 }}
-          onClick={start}
-          className="mt-4 w-full rounded-2xl bg-accent py-4 text-base font-bold text-white
-                     ring-1 ring-accent/40 transition-opacity hover:opacity-90"
-        >
-          {count}문제 시작
-        </motion.button>
-        {/* 캐시/배포 확인용 임시 빌드 마커 — 새 버전이 적용되면 이 값이 보임. */}
-        <div className="text-muted mt-3 text-center text-xs">build: kb-fix-5</div>
+        <div className="mt-5 flex flex-col gap-4">
+          <Field label="형식">
+            <Segmented options={fmtOptions} value={fmt} onChange={setFmt} />
+          </Field>
+          {fmt === MC && (
+            <Field label="출제 방향">
+              <Segmented options={DIRS} value={dir} onChange={setDir} />
+            </Field>
+          )}
+        </div>
+
+        {free ? (
+          <div className="mt-5 flex gap-2">
+            <button onClick={() => nav('/flashcards', { state: { scope } })} className="flex-1 rounded-2xl bg-card py-4 text-base font-bold hover:bg-card-hover">🃏 암기</button>
+            <motion.button whileTap={{ scale: 0.98 }} onClick={start} className="flex-1 rounded-2xl bg-accent py-4 text-base font-bold text-white border border-accent/40 hover:opacity-90">📝 문제</motion.button>
+          </div>
+        ) : (
+          <motion.button
+            whileTap={{ scale: 0.98 }}
+            onClick={start}
+            className="mt-5 w-full rounded-2xl bg-accent py-4 text-base font-bold text-white
+                       border border-accent/40 transition-opacity hover:opacity-90"
+          >
+            문제 시작
+          </motion.button>
+        )}
       </Shell>
     )
   }
@@ -189,7 +263,7 @@ export default function Quiz() {
     const pct = total ? Math.round((correct / total) * 100) : 0
     return (
       <Shell onBack={() => nav('/')} title="결과">
-        <div className="mb-6 rounded-2xl bg-gradient-to-br from-accent/20 to-card p-6 text-center ring-1 ring-accent/30">
+        <div className="mb-6 rounded-2xl bg-gradient-to-br from-accent/20 to-card p-6 text-center border border-accent/30">
           <div className="text-muted text-sm">정답</div>
           <div className="mt-1 text-4xl font-bold">
             {correct}
@@ -202,14 +276,22 @@ export default function Quiz() {
           <div className="mb-6">
             <div className="text-muted mb-2 text-sm">틀린 한자 ({wrong.length})</div>
             <div className="flex flex-col gap-2">
-              {wrong.map(({ q: wq }, i) => (
-                <div key={i} className="flex items-center gap-3 rounded-xl bg-card p-3">
-                  <span className="hanja text-3xl">{wq.dir === H2R ? wq.prompt : wq.options[wq.answerIndex]}</span>
-                  <span className="text-muted text-sm">
-                    {wq.fmt === SA ? wq.answers.join(' / ') : wq.dir === H2R ? wq.options[wq.answerIndex] : wq.prompt}
-                  </span>
-                </div>
-              ))}
+              {wrong.map(({ q: wq }, i) => {
+                const isR2H = wq.fmt === MC && wq.dir === R2H
+                const hanjaText = isR2H ? wq.options[wq.answerIndex] : wq.prompt
+                const readingText =
+                  wq.fmt === MC
+                    ? wq.dir === H2R
+                      ? wq.options[wq.answerIndex]
+                      : wq.prompt
+                    : wq.answers.join(' / ')
+                return (
+                  <div key={i} className="flex items-center gap-3 rounded-xl bg-card p-3">
+                    <span className="hanja text-3xl">{hanjaText}</span>
+                    <span className="text-muted text-sm">{readingText}</span>
+                  </div>
+                )
+              })}
             </div>
           </div>
         )}
@@ -234,8 +316,18 @@ export default function Quiz() {
     )
   }
 
+  // 출제할 문제가 없을 때(예: 단어형인데 예시 단어가 없는 범위).
+  if (phase === 'play' && !questions.length) {
+    return (
+      <Shell onBack={() => (scheduleMark || location.state?.resume ? nav('/schedule') : setPhase('config'))} onHome={fromSub ? () => nav('/') : null} title={screenTitle}>
+        <p className="text-muted text-sm">출제할 문제가 없어요. (단어 예시가 없는 범위일 수 있어요)</p>
+      </Shell>
+    )
+  }
+
   // ----- 풀이 -----
   const isHanjaOption = q.fmt === MC && q.dir === R2H // 보기가 한자 글자인지
+  const stat = q.fmt === WORD ? wordbook.wordStats(q.word[0]) : statsOf(q.hanjaId) // 이 문제 출제/정답 횟수
   const bottomBtn = (
     <button
       onClick={onBottom}
@@ -248,140 +340,240 @@ export default function Quiz() {
     </button>
   )
   return (
+    <>
     <motion.div
       initial={{ opacity: 0, x: 16 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -16 }}
       transition={{ duration: 0.18 }}
-      className="flex min-h-0 flex-1 flex-col"
+      // 객관식은 키보드가 없어 항상 스크롤 허용(넘칠 때만 스크롤 — 큰 폰트서 보기·버튼 잘림 방지).
+      // 입력형(단답·단어)은 채점 후에만 허용(입력 중 키보드 빈공간 방지 — 기존 처리 유지).
+      className={`flex flex-col ${isAnswered || q.fmt === MC ? 'screen-scroll' : ''}`}
     >
-      {/* 상단 고정: 뒤로 + 진행 */}
-      <div className="shrink-0">
-        <div className="mb-3 flex items-center justify-between">
+      {/* 헤더: 뒤로 + 진행 */}
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
           <button
-            onClick={() => nav('/')}
+            onClick={() => (scheduleMark || location.state?.resume ? nav('/schedule') : setPhase('config'))}
             className="rounded-xl bg-card px-3.5 py-2 text-sm hover:bg-card-hover"
           >
-            ◀ 뒤로
+            ◀ {scheduleMark || location.state?.resume ? '일일 학습' : '설정'}
+          </button>
+          <button onClick={() => nav('/')} className="rounded-xl bg-card px-3 py-2 text-sm hover:bg-card-hover" aria-label="메인">
+            🏠
+          </button>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setListHanja({ id: q.hanjaId, c: q.char, label: readingText(all.find((h) => h.id === q.hanjaId) || { r: [] }) })}
+            className={`text-xl leading-none ${inAnyList(q.hanjaId) ? 'text-gold' : 'text-muted'}`}
+            aria-label="목록에 담기"
+          >
+            {inAnyList(q.hanjaId) ? '★' : '☆'}
           </button>
           <span className="text-sm text-muted">정답 {results.filter((r) => r.correct).length}</span>
         </div>
-        <div className="mb-1 text-sm text-muted">
+      </div>
+      <div className="mb-1 flex items-center justify-between text-sm text-muted">
+        <span>
           {qi + 1} / {questions.length}
-        </div>
-        <div className="h-1.5 overflow-hidden rounded-full bg-card">
-          <div
-            className="h-full rounded-full bg-accent transition-all duration-300"
-            style={{ width: `${(qi / questions.length) * 100}%` }}
-          />
-        </div>
+        </span>
+        <span>
+          출제 {stat.seen}회 · 정답 {stat.correct}회
+        </span>
+      </div>
+      <div className="mb-6 h-1.5 overflow-hidden rounded-full bg-card">
+        <div
+          className="h-full rounded-full bg-accent transition-all duration-300"
+          style={{ width: `${(qi / questions.length) * 100}%` }}
+        />
       </div>
 
-      {q.fmt === SA ? (
-        /* 단답식: 위에서부터 쌓는다 — 입력칸이 상단에 있으면 iOS가 화면을 밀어올리지 않음.
-           아래 빈 공간을 키보드가 덮어도 문제·입력·버튼이 위에 그대로 보인다. */
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pt-4">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={qi}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={{ duration: 0.2 }}
-              className="flex flex-col gap-4"
-            >
-              {/* 문제(컴팩트) */}
-              <div className="rounded-2xl bg-card py-6 text-center">
-                <div className="brand-hanja text-6xl leading-none">{q.prompt}</div>
-                <div className="text-muted mt-3 text-sm">{q.sub}</div>
-              </div>
-
-              {/* 입력칸 */}
-              <div className="flex flex-col gap-2.5">
-                {q.answers.map((ans, i) => (
-                  <div key={i}>
-                    <input
-                      value={inputs[i] || ''}
-                      onChange={(e) =>
-                        setInputs((prev) => {
-                          const nx = [...prev]
-                          nx[i] = e.target.value
-                          return nx
-                        })
-                      }
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !graded) submitSA()
-                      }}
-                      disabled={graded}
-                      placeholder={q.answers.length > 1 ? `훈·음 ${i + 1}` : '훈·음 (예: 아름다울 가)'}
-                      autoComplete="off"
-                      autoCapitalize="off"
-                      className={saInputClass(graded, saPer?.[i])}
-                    />
-                    {graded && <div className="text-muted mt-1 px-1 text-sm">정답: {ans}</div>}
-                  </div>
-                ))}
-              </div>
-
-              {/* 채점/다음 (입력 바로 아래) */}
-              {bottomBtn}
-            </motion.div>
-          </AnimatePresence>
-        </div>
-      ) : (
-        /* 객관식: 가운데 정렬 + 버튼 하단 고정 (키보드 없으니 3단 유지). */
-        <>
-          <div
-            className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto py-4"
-            style={{ justifyContent: 'safe center' }}
-          >
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={qi}
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.2 }}
-                className="flex flex-col gap-4"
-              >
-                {/* 문제 */}
-                <div className="rounded-2xl bg-card py-7 text-center">
-                  <div className={q.dir === H2R ? 'brand-hanja text-7xl leading-none' : 'text-3xl font-bold'}>
-                    {q.prompt}
-                  </div>
-                  <div className="text-muted mt-3 text-sm">{q.sub}</div>
-                </div>
-
-                {/* 보기 */}
-                <div className="flex flex-col gap-2.5">
-                  {q.options.map((opt, i) => (
-                    <motion.button
-                      key={i}
-                      whileTap={selected === null ? { scale: 0.98 } : undefined}
-                      onClick={() => pick(i)}
-                      className={optionClass(i, selected, q.answerIndex)}
-                    >
-                      <span className="flex items-center justify-between gap-3">
-                        <span className={isHanjaOption ? 'hanja text-2xl' : 'text-base'}>{opt}</span>
-                        {selected !== null && <span className="text-muted text-sm">{q.notes[i]}</span>}
-                      </span>
-                    </motion.button>
-                  ))}
-                </div>
-              </motion.div>
-            </AnimatePresence>
+      {/* 문제 + 보기/입력 + 버튼 (자연 높이 흐름). */}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={qi}
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -20 }}
+          transition={{ duration: 0.2 }}
+          className="flex flex-col gap-4"
+        >
+          {/* 문제. 입력형(단답식·단어형)은 키보드 위에 폼이 들어가도록 카드를 컴팩트하게. */}
+          <div className={`rounded-2xl bg-card text-center ${isInput ? 'py-4' : 'py-7'}`}>
+            <div className={promptClass(q)}>{q.prompt}</div>
+            <div className="text-muted mt-2 text-sm">{q.sub}</div>
           </div>
-          <div className="shrink-0 pt-3">{bottomBtn}</div>
-        </>
-      )}
+
+          {/* 객관식 보기 */}
+          {q.fmt === MC && (
+            <div className="flex flex-col gap-2.5">
+              {q.options.map((opt, i) => (
+                <motion.button
+                  key={i}
+                  whileTap={selected === null ? { scale: 0.98 } : undefined}
+                  onClick={() => pick(i)}
+                  className={optionClass(i, selected, q.answerIndex)}
+                >
+                  <span className="flex items-center justify-between gap-3">
+                    <span className={isHanjaOption ? 'hanja text-2xl' : 'text-base'}>{opt}</span>
+                    {selected !== null && <span className="text-muted text-sm">{q.notes[i]}</span>}
+                  </span>
+                </motion.button>
+              ))}
+            </div>
+          )}
+
+          {/* 입력형(단답식·단어형) 입력 */}
+          {isInput && (
+            <div className="flex flex-col gap-2.5">
+              {q.answers.map((ans, i) => (
+                <div key={i}>
+                  <input
+                    value={inputs[i] || ''}
+                    onChange={(e) =>
+                      setInputs((prev) => {
+                        const nx = [...prev]
+                        nx[i] = e.target.value
+                        return nx
+                      })
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !graded) submitSA()
+                    }}
+                    disabled={graded}
+                    placeholder={inputPlaceholder(q, i)}
+                    autoComplete="off"
+                    autoCapitalize="off"
+                    className={saInputClass(graded, saPer?.[i])}
+                  />
+                  {graded && <div className="text-muted mt-1 px-1 text-sm">정답: {ans}</div>}
+                </div>
+              ))}
+              {/* 단어형: 채점 후 단어 속 한자 풀이 + 뜻 */}
+              {graded && q.fmt === WORD && <WordReveal word={q.word} />}
+            </div>
+          )}
+
+          {/* 정답 공개 후: 이 한자의 예시 단어(탭하면 뜻·단어장). 단어형은 제외(이미 풀이+뜻이 나옴). */}
+          {isAnswered && q.fmt !== WORD && (
+            <ExampleWords char={q.char} onPick={setSheetWord} ver={bookVer} ready={exReady} />
+          )}
+
+          {/* 정답 공개 후: 한자 사전 — 정답+보기 한자 버튼(탭하면 상세 시트). */}
+          {isAnswered && q.fmt !== WORD && <DictRow chars={dictChars(q)} onPick={setSheetChar} />}
+
+          {/* 채점/다음 */}
+          {bottomBtn}
+        </motion.div>
+      </AnimatePresence>
     </motion.div>
+      <HanjaSheet char={sheetChar} all={all} onClose={() => setSheetChar(null)} onStar={setListHanja} onPickWord={setSheetWord} />
+      <WordSheet
+        word={sheetWord}
+        onClose={() => {
+          setSheetWord(null)
+          setBookVer((v) => v + 1)
+        }}
+      />
+      <HanjaListSheet hanja={listHanja} onClose={() => { setListHanja(null); setFavVer((v) => v + 1) }} />
+    </>
   )
 }
 
 function bottomLabel(q, isAnswered, graded, more) {
-  if (q.fmt === SA && !graded) return '채점'
+  if ((q.fmt === SA || q.fmt === WORD) && !graded) return '채점'
   if (!isAnswered) return '정답을 고르세요'
   return more ? '다음' : '결과 보기'
+}
+
+// 채점 후 사전 버튼에 쓸 한자들: 객관식=정답+보기 한자(중복 제거), 단답식=메인 한자.
+function dictChars(q) {
+  if (q.fmt === MC) {
+    const opts = q.dir === R2H ? q.options : q.notes // r2h=보기가 한자, h2r=notes가 한자
+    const seen = new Set()
+    const out = []
+    for (const c of [q.char, ...(opts || [])]) {
+      if (c && !seen.has(c)) { seen.add(c); out.push(c) }
+    }
+    return out
+  }
+  return [q.char]
+}
+
+// 채점 후 한자 사전 버튼 행 — 탭하면 한자 상세 시트.
+function DictRow({ chars, onPick }) {
+  if (!chars.length) return null
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-xl bg-card/60 p-3">
+      <span className="text-muted text-xs">📖 사전</span>
+      {chars.map((c) => (
+        <button key={c} onClick={() => onPick(c)} className="brand-hanja rounded-lg bg-card px-3 py-1.5 text-xl hover:bg-card-hover">
+          {c}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// 문제 카드 글자 스타일. 단어형=한자어(.hanja, 길이별 크기), 단답식/객관식h2r=명조 한자, r2h=훈음 텍스트.
+function promptClass(q) {
+  if (q.fmt === WORD) return `hanja leading-none ${q.prompt.length >= 3 ? 'text-5xl' : 'text-6xl'}`
+  if (q.fmt === SA) return 'brand-hanja text-5xl leading-none'
+  if (q.dir === H2R) return 'brand-hanja text-7xl leading-none'
+  return 'text-3xl font-bold'
+}
+
+function inputPlaceholder(q, i) {
+  if (q.fmt === WORD) return '읽기 (예: 가두)'
+  return q.answers.length > 1 ? `훈·음 ${i + 1}` : '훈·음 (예: 아름다울 가)'
+}
+
+// 단어형 정답 공개: 단어 속 각 한자의 훈음 풀이(頭腦 → 頭(머리 두) , 腦(골 뇌)) + 뜻.
+function WordReveal({ word }) {
+  const [hj, rd, mean] = word
+  const seen = new Set()
+  const parts = []
+  for (let i = 0; i < hj.length; i++) {
+    const c = hj[i]
+    if (seen.has(c)) continue
+    seen.add(c)
+    parts.push(`${c}(${readingFor(c, rd[i] || '')})`)
+  }
+  return (
+    <div className="mt-1 rounded-xl bg-card/60 p-3">
+      <div className="text-sm">
+        <span className="text-muted">풀이  </span>
+        <span className="hanja">{parts.join('   ,   ')}</span>
+      </div>
+      {mean && <div className="text-muted mt-1.5 text-xs leading-relaxed">{mean}</div>}
+    </div>
+  )
+}
+
+// 정답 공개 후 예시 단어 칩들 — 탭하면 상세 시트(뜻·단어장). 단어장에 담긴 단어는 금색.
+function ExampleWords({ char, onPick }) {
+  const words = exampleWords(char)
+  if (!words.length) return null
+  return (
+    <div className="rounded-xl bg-card/60 p-3">
+      <div className="text-muted mb-2 text-xs">예시 단어 · 탭하면 뜻·단어장</div>
+      <div className="flex flex-wrap gap-2">
+        {words.map((w, i) => (
+          <button
+            key={i}
+            onClick={() => onPick(w)}
+            className={`rounded-lg px-2.5 py-1.5 text-sm transition-colors ${
+              wordbook.containsAny(w[0]) ? 'bg-gold/15 text-gold' : 'bg-card hover:bg-card-hover'
+            }`}
+          >
+            <span className="hanja">{w[0]}</span>
+            <span className="text-muted">({w[1]})</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 // 보기 버튼 색: 정답=초록, 내가 고른 오답=빨강, 나머지=흐리게.
@@ -401,8 +593,8 @@ function saInputClass(graded, ok) {
   return ok ? `${base} border-good/60 bg-good/15` : `${base} border-bad/60 bg-bad/15`
 }
 
-// 공통 화면 틀: 헤더(뒤로+제목)는 고정, 본문만 내부 스크롤.
-function Shell({ onBack, title, children }) {
+// 공통 화면 틀: 헤더(뒤로+제목)는 고정, 본문만 내부 스크롤(긴 설정·결과 대응).
+function Shell({ onBack, onHome, title, children }) {
   return (
     <motion.div
       initial={{ opacity: 0, x: 16 }}
@@ -412,15 +604,19 @@ function Shell({ onBack, title, children }) {
       className="flex min-h-0 flex-1 flex-col"
     >
       <div className="shrink-0">
-        <button
-          onClick={onBack}
-          className="mb-4 rounded-xl bg-card px-4 py-2 text-sm hover:bg-card-hover"
-        >
-          ◀ 뒤로
-        </button>
+        <div className="mb-4 flex items-center gap-2">
+          <button onClick={onBack} className="rounded-xl bg-card px-4 py-2 text-sm hover:bg-card-hover">
+            ◀ 뒤로
+          </button>
+          {onHome && (
+            <button onClick={onHome} className="rounded-xl bg-card px-3 py-2 text-sm hover:bg-card-hover" aria-label="메인">
+              🏠
+            </button>
+          )}
+        </div>
         <h1 className="mb-4 text-2xl font-bold tracking-tight">{title}</h1>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+      <div className="screen-scroll">{children}</div>
     </motion.div>
   )
 }
@@ -431,20 +627,6 @@ function Field({ label, children }) {
       <div className="text-muted mb-2 text-sm">{label}</div>
       {children}
     </div>
-  )
-}
-
-// 급수 칩(여러 개라 줄바꿈). 선택된 것만 accent.
-function Chip({ active, onClick, children }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`rounded-xl px-3.5 py-2 text-sm font-semibold transition-colors ${
-        active ? 'bg-accent text-white' : 'bg-card text-muted hover:bg-card-hover'
-      }`}
-    >
-      {children}
-    </button>
   )
 }
 

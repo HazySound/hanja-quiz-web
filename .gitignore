@@ -12,6 +12,15 @@ dist
 dist-ssr
 *.local
 
+# 로컬 메모(서버 실행 명령어 등) — 커밋 제외
+run-dev.txt
+
+# 환경변수(공휴일 API 키 등) — 절대 커밋 금지. netlify dev / 빌드 시 사용
+.env
+.env.*
+!.env.example
+.netlify
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
